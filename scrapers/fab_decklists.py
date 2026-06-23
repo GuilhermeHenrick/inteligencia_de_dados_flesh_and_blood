@@ -1,7 +1,6 @@
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
-import time
 import hashlib
 import sys
 import os
@@ -45,57 +44,107 @@ def create_id(data):
     pos = 'ni' if result == 'not informed' else result
     id_base = string_initials + last_word + pos
 
-    link_hash = hashlib.md5(deck_link.encode('utf-8')).hexdigest()[:6]
+    link_hash = hashlib.md5(deck_link.encode('utf-8')).hexdigest()
 
-    return id_base + link_hash
+    return link_hash + '_' + id_base
 
-# Função de extração principal que recebe 'existent_ids' para aplicar a lógica de raspagem incremental (só baixa o que é novo)
-def extract_data(existent_ids):
+# --- FUNÇÕES AUXILIARES PARA CONCORRÊNCIA ---
+
+def get_max_page(start_page):
+    """Busca a última página disponível na paginação a partir da página inicial."""
+    url = f"https://fabtcg.com/decklists/?page={start_page}"
+    response = get_page(url, session)
+    if response:
+        soup = BeautifulSoup(response.content, 'lxml')
+        pages = soup.find_all('a', class_='page-numbers')
+        if pages and len(pages) >= 2:
+            # Retorna o valor contido no penúltimo botão (que representa a última página numérica)
+            return int(pages[-2].text.strip())
+    return start_page
+
+def process_page(page_num, existent_ids):
+    """Faz a extração e o parser de uma única página de forma isolada para execução na thread."""
     info_page = []
     hit_existing = False
     
-    for p in range(1, 20):
-        if hit_existing:
+    url = f"https://fabtcg.com/decklists/page/{page_num}/"
+    response = get_page(url, session)
+    
+    if not response:
+        return None, False, page_num
+
+    soup = BeautifulSoup(response.content, 'lxml')
+    table = soup.find('table')
+    
+    if not table:
+        return info_page, hit_existing, page_num
+
+    trs = table.find_all('tr')
+    
+    for line in trs:
+        columns = line.find_all('td')
+        if len(columns) < 7: 
+            continue
+            
+        data = [col.text.strip() for col in columns]
+        
+        elemento_a = columns[2].find('a')
+        data.append(elemento_a.get('href')+' ' if elemento_a else "no_link")
+        
+        event_type = classify_event(data[3])
+        data.append(event_type)
+
+        new_id = create_id(data)
+        data.append(new_id)
+        
+        # Interrompe a varredura se encontrar um deck já salvo
+        if new_id not in existent_ids:
+            info_page.append(data)
+        else:
+            hit_existing = True
             break
             
-        url = f"https://fabtcg.com/decklists/?page={p}"
-        response = get_page(url, session)
+    return info_page, hit_existing, page_num
 
-        if response:
-            soup = BeautifulSoup(response.content, 'lxml')
-            table = soup.find('table', class_='table table-striped table-hover decklist-table')
+# Função de extração principal usando ThreadPoolExecutor
+def extract_data(existent_ids):
+    start_page = 1 
+    print(f"Descobrindo o total de páginas a partir da página {start_page}...")
+    max_page = get_max_page(start_page)
+    
+    all_new_data = []
+    hit_global = False
+    
+    BATCH_SIZE = 15
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
+        for current_batch_start in range(start_page, max_page + 1, BATCH_SIZE):
+            if hit_global:
+                break
+                
+            batch_end = min(current_batch_start + BATCH_SIZE, max_page + 1)
+            print(f"Processando concorrentemente as páginas: {current_batch_start} a {batch_end - 1}...")
             
-            if not table:
-                continue
-
-            trs = table.find_all('tr')
+            # Submete o lote atual para as threads worker
+            futures = {executor.submit(process_page, p, existent_ids): p for p in range(current_batch_start, batch_end)}
+            results = {}
             
-            for line in trs:
-                columns = line.find_all('td')
-                if len(columns) < 7: 
-                    continue
-                    
-                data = [col.text.strip() for col in columns]
-                
-                elemento_a = columns[2].find('a')
-                data.append(elemento_a.get('href') if elemento_a else "no_link")
-                
-                event_type = classify_event(data[3])
-                data.append(event_type)
+            # Coleta os resultados assim que cada thread termina
+            for future in concurrent.futures.as_completed(futures):
+                info, hit, p_num = future.result()
+                results[p_num] = (info, hit)
+            
+            # Consolida na ORDEM DAS PÁGINAS para garantir a consistência do Early Exit
+            for p in range(current_batch_start, batch_end):
+                if p in results:
+                    info, hit = results[p]
+                    if info:
+                        all_new_data.extend(info)
+                    if hit:
+                        hit_global = True
+                        break
 
-                new_id = create_id(data)
-                data.append(new_id)
-                
-                # Interrompe a varredura (Early Exit) imediatamente ao encontrar um deck já salvo, poupando recursos e rede
-                if new_id not in existent_ids:
-                    info_page.append(data)
-                else:
-                    hit_existing = True
-                    break
-        else:
-            return None, False
-
-    return info_page, hit_existing
+    return all_new_data, hit_global
 
 # Orquestrador do módulo responsável pelo controle de estado do arquivo e persistência final dos dados (I/O)
 def create_decklists_csv():
@@ -129,3 +178,6 @@ def create_decklists_csv():
             print(f"Success! {len(info_new)} New decks added to {output_path}.")
         else:
             print("The scan was complete, no new decks to add.")
+
+if __name__ == "__main__":
+    create_decklists_csv()

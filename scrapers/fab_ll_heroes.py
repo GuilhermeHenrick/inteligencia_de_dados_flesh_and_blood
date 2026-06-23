@@ -38,7 +38,7 @@ def create_ll_heroes_csv():
 
         # Validação de integridade do DOM: assegura que o site renderizou as tabelas corretamente antes de acessar índices fixos
         if len(tables) > 1:
-            trs = tables[1].find_all('tr')
+            trs = tables[2].find_all('tr')
             heroes = []
             formats = []
 

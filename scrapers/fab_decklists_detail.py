@@ -23,85 +23,56 @@ def extract_decklist(url, deck_id, session):
     soup = BeautifulSoup(response.content, 'html.parser')
     
     player_info = {}
-    player_element = soup.find('h4', class_='text-center decklist-author')
-    if player_element and player_element.find('a'):
-        player_a = player_element.find('a')
-        player_info['name'] = player_a.text.strip()
-        player_info['id'] = player_a.get('href').split('/')[-2]
-    
-    country_element = soup.find('span', class_='flag-icon')
-    if country_element:
-        classes = country_element.get('class', [])
-        for c in classes:
-            if c.startswith('flag-icon-'):
-                player_info['country'] = c.replace('flag-icon-', '').upper()
-
     decklist_info = {}
-    info_table = soup.find('table', class_='table table-striped table-hover decklist-table')
-    if info_table:
-        for tr in info_table.find_all('tr'):
-            tds = tr.find_all('td')
-            if len(tds) == 2:
-                key = tds[0].text.strip().lower()
-                val = tds[1].text.strip()
-                decklist_info[key] = val
+    deck_info = soup.find('div', class_='player-grid').find_all('p')
 
+    player_gem_data = deck_info[3].text.split()
+    player_info['country'] = deck_info[1].text.strip()
+    player_info['name'] = " ".join(player_gem_data[0:-1])
+    player_info['id'] = player_gem_data[-1][1:-1]
+    hero_name = deck_info[6].text.strip()
+    decklist_info['date'] = deck_info[2].text.strip()
+    decklist_info['position'] = deck_info[0].text.strip()
+    decklist_info['event'] = deck_info[4].text.strip()
+    decklist_info['format'] = deck_info[5].text.strip()
+
+    
     deck_name = ""
-    name_element = soup.find('h1', class_='text-center title')
+    name_element = soup.find('div', class_='player-name').find('h2')
     if name_element:
         deck_name = name_element.text.strip()
 
-    hero_name = ""
-    hero_header = soup.find('div', class_='decklist-header-image')
-    if hero_header:
-        hero_div = hero_header.find('div', class_='decklist-hero')
-        if hero_div and hero_div.find('h1'):
-            hero_name = hero_div.find('h1').text.strip()
+    equipments = []
+    equipment_cards_element = soup.find('div', class_="cards-container").find_all('div', class_='card-name')
+    for card in equipment_cards_element[1:]:
+        equipments.append({f'{card.text[3:]}': card.text[0]})
 
+    pitchs = [0,1,2,3]
+    deck = []
+    for pitch in pitchs:
+        element = soup.find('div', class_=f'pitch-{pitch}')
+        if element != None:
+            cards_elements = element.find_all('div', class_="card-name")
+            for card in cards_elements:
+                card_dict ={}
+                if ")" in card.text or '(' in card.text:
+                    card_dict['name'] = card.text.strip()[3:-5]
+                else:
+                    card_dict['name'] = card.text.strip()[3:]
+                card_dict['qty'] = card.text.strip()[0]
+                card_dict['pitch'] = pitch
+                deck.append(card_dict)
+
+    
     deck_data = {
         "Deck ID": deck_id,
         "Decklist_name": deck_name,
-        "Hero": hero_name,
-        "Player_info": player_info,
         "Decklist_info": decklist_info,
-        "Equipments": [],
-        "Deck": []
+        "Player_info": player_info,
+        "Hero": hero_name,
+        "Equipments": equipments,
+        "Deck": deck
     }
-
-    blocks = soup.find_all('div', class_='col-12 col-md-6 mb-4')
-    for block in blocks:
-        title_el = block.find('h4')
-        if not title_el:
-            continue
-            
-        title = title_el.text.strip()
-        rows = block.find_all('div', class_='row decklist-card-row')
-        
-        if title in ["Weapons", "Equipment"]:
-            for row in rows:
-                name_el = row.find('div', class_='col-9 decklist-card-name').find('a')
-                qty_el = row.find('div', class_='col-3 text-right')
-                if name_el and qty_el:
-                    deck_data["Equipments"].append({name_el.text.strip(): qty_el.text.strip()})
-        else:
-            for row in rows:
-                name_el = row.find('div', class_='col-9 decklist-card-name').find('a')
-                qty_el = row.find('div', class_='col-3 text-right')
-                if name_el and qty_el:
-                    pitch = 0
-                    pitch_span = row.find('span', class_='pitch-btn')
-                    if pitch_span:
-                        pitch_classes = pitch_span.get('class', [])
-                        if 'pitch-1' in pitch_classes: pitch = 1
-                        elif 'pitch-2' in pitch_classes: pitch = 2
-                        elif 'pitch-3' in pitch_classes: pitch = 3
-
-                    deck_data["Deck"].append({
-                        "name": name_el.text.strip(),
-                        "qty": qty_el.text.strip(),
-                        "pitch": pitch
-                    })
-
     # Libera ativamente a memória ocupada pela árvore do BeautifulSoup, prevenindo memory leaks em raspagens de longa duração
     soup.decompose()
     return deck_data

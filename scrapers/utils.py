@@ -108,9 +108,8 @@ def get_page(url: str, session: requests.Session):
             response = session.get(url, timeout=10)
 
             if response.status_code == 200:
+                print(f"Attempt {attempt + 1}: Status {response.status_code} in {url}")
                 return response
-            
-            print(f"Attempt {attempt + 1}: Status {response.status_code} in {url}")
 
         except requests.RequestException as e:
             print(f"Attempt {attempt + 1} fail. Error: {e}")

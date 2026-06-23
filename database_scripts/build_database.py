@@ -59,7 +59,7 @@ def search_card_id(clean_name, pitch_json, cards_map):
 
 # Orquestrador de ETL (Extract, Transform, Load): processa o JSONL de decklists de forma sequencial e modela os dados em formato relacional no SQLite
 def build_decklists_db():
-    print("<============= Iniciando construção do Banco de Decklists =============>")
+    print("<============= Iniciando construção/atualização do Banco de Decklists =============>")
     
     # Resolve caminhos absolutos dinamicamente para garantir a portabilidade do script independentemente do diretório de chamada
     local_dir = os.path.dirname(os.path.abspath(__file__))
@@ -141,9 +141,15 @@ def build_decklists_db():
                 pitch_val = None
             cards_map[(name.lower(), pitch_val)] = uid
 
-    print("Processando decklists e inserindo no banco...")
+    # [NOVO] Criação do Set com os deck_ids já existentes no banco de dados
+    cursor.execute("SELECT deck_id FROM Deck")
+    existing_decks = {row[0] for row in cursor.fetchall()}
+    print(f"[{len(existing_decks)}] Decks já cadastrados encontrados no banco. Eles serão ignorados na leitura.")
+
+    print("Processando novas decklists e inserindo no banco...")
     
     # Inicia a leitura do arquivo JSONL (Streaming de Dados) linha a linha, garantindo baixo consumo de RAM mesmo que o arquivo chegue a gigabytes
+    novos_inseridos = 0
     with open(JSONL_FILE, 'r', encoding='utf-8') as f:
         for line in f:
             if not line.strip(): continue
@@ -151,6 +157,13 @@ def build_decklists_db():
             if 'Erro' in d or 'error' in d: continue
                 
             deck_id = d.get('Deck ID')
+            
+            # [NOVO] Verifica se o deck já está no banco de dados. Se sim, pula para a próxima linha do JSONL.
+            if not deck_id or deck_id in existing_decks:
+                continue
+                
+            novos_inseridos += 1
+            
             player_info = d.get('Player_info', {})
             player_name = player_info.get('name', 'Unknown')
             player_id = player_info.get('id', player_name) 
@@ -196,7 +209,7 @@ def build_decklists_db():
     # Transação Atômica Global: assegura que todas as inserções sejam consolidadas de uma só vez apenas quando o pipeline finalizar com sucesso
     conn.commit()
     conn.close()
-    print(">>> Banco de dados fabtcg_decklists.db construído com sucesso!\n")
+    print(f">>> Operação concluída! {novos_inseridos} novos decks inseridos no banco fabtcg_decklists.db.\n")
 
 if __name__ == "__main__":
     build_decklists_db()
