@@ -4,8 +4,6 @@ import time
 from scrapers.fab_decklists import create_decklists_csv
 from scrapers.fab_decklists_detail import update_detailed_decklists
 from scrapers.fab_ll import create_ll_csv
-from scrapers.fab_ll_heroes import create_ll_heroes_csv
-from scrapers.signature_weapons import create_weapons_csv
 
 # Orquestrador principal (Pipeline Manager) responsável por acionar as rotinas de dados de forma sequencial e controlada
 def run_all_scrapers():
@@ -24,12 +22,6 @@ def run_all_scrapers():
 
         print("\n<======== 3. LIVING LEGENDS ========>")
         create_ll_csv()
-
-        print("\n<======== 4. LIVING LEGENDS HEROES ========>")
-        create_ll_heroes_csv()
-
-        print("\n<======== 5. SIGNATURE WEAPONS ========>")
-        create_weapons_csv()
 
     # Captura de erros críticos (Fail-safe): interrompe a pipeline de forma graciosa e fornece logs claros sobre o incidente
     except Exception as e:
