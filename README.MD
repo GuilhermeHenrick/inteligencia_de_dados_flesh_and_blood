@@ -16,17 +16,14 @@ O ecossistema do jogo gera um volume grande de informações descentralizadas: d
 
 ## 🤖 Uso de IA no Desenvolvimento
 
-Este projeto foi desenvolvido com apoio do **Google Gemini**, atuando como mentor técnico ao longo do processo. O papel da IA foi essencialmente consultivo e de revisão de arquitetura, e não de geração autônoma do projeto do zero — as decisões de produto e a lógica de negócio são do autor.
+Usei o **Google Gemini** como mentor técnico ao longo do desenvolvimento — para revisar decisões de arquitetura, discutir trade-offs e apontar boas práticas. A lógica de negócio, a modelagem dos dados e a implementação são minhas; a IA atuou como revisora e caixa de ressonância, não como autora do projeto.
 
-Em suas próprias palavras:
+Na prática, esse apoio se traduziu em:
 
-> "Atuei como seu Mentor Sênior de Engenharia de Dados, otimizando a arquitetura do código com soluções avançadas (como Multithreading e Zero-Copy). Além disso, fui responsável pela documentação técnica, adicionando os comentários arquiteturais focados no "porquê" das decisões em todos os seus scripts!"
-
-Na prática, isso se traduziu em:
-
-- **Otimização de arquitetura** — sugestões que levaram à adoção de `ThreadPoolExecutor` para paralelizar a extração detalhada de decklists e de migração *Zero-Copy* via `ATTACH DATABASE` no SQLite para cruzar o banco de cartas com o de decklists sem reprocessamento custoso em Python.
-- **Documentação técnica orientada ao "porquê"** — os comentários presentes nos scripts (`run_scrapers.py`, `utils.py`, `fab_decklists.py`, `fab_decklists_detail.py`, `fab_ll.py`, `fab_ll_heroes.py`, `signature_weapons.py`, `build_database.py`, `build_full_cards_database.py`) não descrevem apenas *o que* o código faz, mas a **decisão de engenharia** por trás de cada trecho (ex.: por que usar `Session` em vez de `requests.get`, por que aplicar `threading.Lock()` na escrita do JSONL, por que tratar *Schema Drift* dinamicamente).
-- **Mentoria sobre boas práticas** — discussão sobre resiliência (retry com backoff), idempotência (raspagem incremental por ID determinístico) e integridade referencial no banco de dados.
+- **Discussões sobre concorrência** — por que paralelizar a extração detalhada de decklists com `ThreadPoolExecutor` e por que proteger a escrita no JSONL com `threading.Lock()` para evitar corrupção por escrita simultânea.
+- **Revisão da estratégia de migração** — validação do uso de *Zero-Copy* via `ATTACH DATABASE` no SQLite para clonar o catálogo de cartas sem reprocessamento custoso em Python.
+- **Boas práticas de resiliência e integridade** — discussão sobre requisições resilientes (retry com espera entre tentativas), idempotência (raspagem incremental por ID determinístico) e integridade referencial no banco.
+- **Documentação orientada ao "porquê"** — os comentários nos scripts descrevem não só *o que* o código faz, mas a **decisão de engenharia** por trás de cada trecho.
 
 ---
 
@@ -70,7 +67,7 @@ A LSS (criadora do jogo) introduz novos atributos com frequência. Em vez de col
 ### 7. Data Cleansing e heurísticas (`utils.py`)
 - **Look-up table (`EVENT_MAPPING`):** padroniza nomes caóticos de eventos digitados por lojistas em categorias estruturadas.
 - **Classes e Talentos dinâmicos:** como essas categorias não vêm explícitas na API, o sistema usa conjuntos (`set`) e uma heurística gramatical (a Classe é sempre a última palavra do campo `types` de um herói) para descobrir Classes e Talentos automaticamente — tornando o código resistente a novos lançamentos do jogo.
-- **Resiliência de rede:** `get_page()` tenta cada requisição até 3 vezes com pausa entre tentativas, protegendo a pipeline contra instabilidades pontuais do site.
+- **Resiliência de rede:** `get_page()` tenta cada requisição até 3 vezes, com pausa entre as tentativas, protegendo a pipeline contra instabilidades pontuais do site.
 
 ---
 
