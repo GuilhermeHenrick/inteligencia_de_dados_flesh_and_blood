@@ -10,7 +10,7 @@
 
 Este projeto é uma **pipeline de Engenharia e Inteligência de Dados** construída para extrair, tratar e modelar dados competitivos do TCG *Flesh and Blood* (FaB).
 
-O ecossistema do jogo gera um volume grande de informações descentralizadas: decklists de torneios, pontuação do formato Living Legend, heróis e suas armas assinatura, além do catálogo completo de cartas com seus atributos mecânicos. O objetivo do sistema é automatizar a coleta (scraping), padronizar e cruzar esses dados, e persistir tudo em um modelo relacional (SQLite), permitindo análises como composição de metagame, popularidade de heróis e aderência de cartas em diferentes formatos.
+O ecossistema do jogo gera um volume grande de informações descentralizadas: decklists de torneios, pontuação do formato Living Legend, além do catálogo completo de cartas com seus atributos mecânicos. O objetivo do sistema é automatizar a coleta (scraping), padronizar e cruzar esses dados, e persistir tudo em um modelo relacional (SQLite), permitindo análises como composição de metagame, popularidade de heróis e aderência de cartas em diferentes formatos.
 
 ---
 
@@ -25,6 +25,8 @@ Na prática, esse apoio se traduziu em:
 - **Boas práticas de resiliência e integridade** — discussão sobre requisições resilientes (retry com espera entre tentativas), idempotência (raspagem incremental por ID determinístico) e integridade referencial no banco.
 - **Documentação orientada ao "porquê"** — os comentários nos scripts descrevem não só *o que* o código faz, mas a **decisão de engenharia** por trás de cada trecho.
 
+Todas as decisões documentadas na seção de arquitetura abaixo eu consigo explicar e defender — que é, no fim, o que torna o projeto meu.
+
 ---
 
 ## 📡 Fontes de Dados
@@ -33,8 +35,6 @@ Na prática, esse apoio se traduziu em:
 | :--- | :--- | :--- |
 | **Decklists e Torneios** | [fabtcg.com/decklists](https://fabtcg.com/decklists/) | Scraping via `BeautifulSoup` + `requests` |
 | **Living Legend (Pontuação)** | [fabtcg.com/living-legend](https://fabtcg.com/living-legend/) | Scraping HTML estruturado, parseado com `Pandas` |
-| **Heróis Living Legend (histórico)** | [fabtcg.com/living-legend](https://fabtcg.com/living-legend/) | Scraping HTML |
-| **Heróis e Armas Assinatura** | [fabtcg.com/heroes](https://fabtcg.com/heroes/) | Scraping HTML |
 | **Catálogo completo de cartas** | [The Fab Cube (GitHub)](https://github.com/the-fab-cube/flesh-and-blood-cards) | Download direto do JSON oficial |
 
 ---
@@ -42,14 +42,14 @@ Na prática, esse apoio se traduziu em:
 ## 🚀 Arquitetura e Decisões de Engenharia
 
 ### 1. Orquestração centralizada (`run_scrapers.py`)
-Um único ponto de entrada dispara os cinco scrapers em sequência, com cronômetro de execução e um bloco `try/except/finally` que isola falhas de um scraper sem derrubar o restante da pipeline.
+Um único ponto de entrada dispara os três scrapers em sequência, com cronômetro de execução e um bloco `try/except/finally` que isola falhas de um scraper sem derrubar o restante da pipeline.
 
 ### 2. Geração determinística de chaves (`deck_id`)
 O site não expõe um ID único por deck. Por isso, o `deck_id` é construído combinando metadados do torneio (iniciais do nome, última palavra, posição do jogador) com um **hash MD5** da URL do deck — garantindo unicidade e permitindo *upserts* seguros sem duplicar registros em raspagens futuras.
 
 ### 3. Raspagem incremental e idempotente
 Os scripts evitam trabalho redundante de duas formas:
-- **Por data:** `file_is_updated()` verifica se o arquivo já foi atualizado no dia, evitando novas requisições desnecessárias (`fab_ll.py`, `fab_ll_heroes.py`, `signature_weapons.py`).
+- **Por data:** `file_is_updated()` verifica se o arquivo já foi atualizado no dia, evitando novas requisições desnecessárias (`fab_ll.py`).
 - **Por ID já conhecido:** `fab_decklists.py` interrompe a varredura de páginas assim que encontra um `deck_id` já salvo (*early exit*), evitando reler o histórico inteiro a cada execução.
 
 ### 4. Concorrência e Thread Safety (`fab_decklists_detail.py`)
@@ -81,9 +81,7 @@ A LSS (criadora do jogo) introduz novos atributos com frequência. Em vez de col
 │   ├── utils.py                          # Headers, retry logic, data cleansing, listas dinâmicas de Classes/Talentos
 │   ├── fab_decklists.py                  # Índice de decklists (raspagem incremental por página)
 │   ├── fab_decklists_detail.py           # Detalhe de cada decklist (multithread + lock + resume)
-│   ├── fab_ll.py                         # Pontuação atual do formato Living Legend
-│   ├── fab_ll_heroes.py                  # Histórico de heróis que já rotacionaram para Living Legend
-│   └── signature_weapons.py              # Mapeamento Herói → Arma Assinatura
+│   └── fab_ll.py                         # Pontuação atual do formato Living Legend
 │
 ├── database_scripts/
 │   ├── build_full_cards_database.py      # Baixa o JSON oficial de cartas e gera full_cards.db (schema dinâmico)
@@ -92,9 +90,7 @@ A LSS (criadora do jogo) introduz novos atributos com frequência. Em vez de col
 ├── scrap_output/                         # CSVs e JSONL gerados pelos scrapers
 │   ├── decklists_fabtcg.csv
 │   ├── detailed_decklists.jsonl
-│   ├── living_legends_fabtcg.csv
-│   ├── living_legends_heroes_fabtcg.csv
-│   └── signature_weapons_fabtcg.csv
+│   └── living_legends_fabtcg.csv
 │
 └── database_output/                      # Bancos de dados SQLite e cache do catálogo de cartas
     ├── full_cards.json
@@ -127,7 +123,7 @@ A LSS (criadora do jogo) introduz novos atributos com frequência. Em vez de col
    python database_scripts/build_full_cards_database.py
    ```
 
-3. Rode a pipeline de scrapers (decklists, Living Legend, heróis e armas):
+3. Rode a pipeline de scrapers (decklists e Living Legend):
    ```bash
    python run_scrapers.py
    ```
